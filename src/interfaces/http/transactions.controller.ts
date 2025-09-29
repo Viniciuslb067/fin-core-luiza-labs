@@ -2,7 +2,6 @@ import {
   Body,
   Controller,
   Get,
-  Headers,
   HttpCode,
   HttpStatus,
   Param,
@@ -19,6 +18,7 @@ import { WithdrawUseCase } from '../../application/use-cases/Withdraw.usecase';
 import { TransferUseCase } from '../../application/use-cases/Transfer.usecase';
 import { ProcessBatchUseCase } from '../../application/use-cases/ProcessBatch.usecase';
 import { VerifyChainUseCase } from '../../application/use-cases/VerifyChain.usecase';
+import { GetBalanceUseCase } from 'src/application/use-cases/GetBalance.usecase';
 
 @Controller('transactions')
 export class TransactionsController {
@@ -28,14 +28,12 @@ export class TransactionsController {
     private readonly transferUC: TransferUseCase,
     private readonly batchUC: ProcessBatchUseCase,
     private readonly verifyUC: VerifyChainUseCase,
+    private readonly getBalanceUC: GetBalanceUseCase,
   ) {}
 
   @Post('deposit')
   @HttpCode(HttpStatus.OK)
-  async deposit(
-    @Body() dto: DepositDto,
-    @Headers('idempotency-key') idem?: string,
-  ) {
+  async deposit(@Body() dto: DepositDto) {
     return this.depositUC.exec({
       accountNumber: dto.accountNumber,
       amount: dto.amount,
@@ -45,10 +43,7 @@ export class TransactionsController {
 
   @Post('withdraw')
   @HttpCode(HttpStatus.OK)
-  async withdraw(
-    @Body() dto: WithdrawDto,
-    @Headers('idempotency-key') idem?: string,
-  ) {
+  async withdraw(@Body() dto: WithdrawDto) {
     return this.withdrawUC.exec({
       accountNumber: dto.accountNumber,
       amount: dto.amount,
@@ -58,10 +53,7 @@ export class TransactionsController {
 
   @Post('transfer')
   @HttpCode(HttpStatus.OK)
-  async transfer(
-    @Body() dto: TransferDto,
-    @Headers('idempotency-key') idem?: string,
-  ) {
+  async transfer(@Body() dto: TransferDto) {
     return this.transferUC.exec({
       from: dto.from,
       to: dto.to,
@@ -72,15 +64,18 @@ export class TransactionsController {
 
   @Post('batch')
   @HttpCode(HttpStatus.OK)
-  async processBatch(
-    @Body() dto: ProcessBatchDto,
-    @Headers('idempotency-key') idem?: string,
-  ) {
+  async processBatch(@Body() dto: ProcessBatchDto) {
     return this.batchUC.exec(dto.items);
   }
 
   @Get('verify/:accountNumber')
   async verify(@Param('accountNumber') accountNumber: string) {
     return this.verifyUC.exec(accountNumber);
+  }
+
+  @Get(':accountNumber/balance')
+  @HttpCode(HttpStatus.OK)
+  async balance(@Param('accountNumber') accountNumber: string) {
+    return this.getBalanceUC.exec({ accountNumber });
   }
 }

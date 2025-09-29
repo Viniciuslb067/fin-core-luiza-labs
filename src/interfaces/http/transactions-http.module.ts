@@ -9,6 +9,7 @@ import { LedgerHeadOrm } from '../../infrastructure/db/entities/LedgerHead.orm';
 import { WithdrawUseCase } from 'src/application/use-cases/Withdraw.usecase';
 import { TransferUseCase } from 'src/application/use-cases/Transfer.usecase';
 import { ProcessBatchUseCase } from 'src/application/use-cases/ProcessBatch.usecase';
+import { GetBalanceUseCase } from 'src/application/use-cases/GetBalance.usecase';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { ProcessBatchUseCase } from 'src/application/use-cases/ProcessBatch.usec
     WithdrawUseCase,
     TransferUseCase,
     ProcessBatchUseCase,
+    GetBalanceUseCase,
   ],
   exports: [],
 })

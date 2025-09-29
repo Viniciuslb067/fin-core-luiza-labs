@@ -11,8 +11,5 @@
   ],
   "coverageDirectory": "../coverage/unit",
   "testEnvironment": "node",
-  "moduleNameMapping": {
-    "^src/(.*)$": "<rootDir>/../../src/$1"
-  },
   "setupFilesAfterEnv": ["<rootDir>/../setup/unit.setup.ts"]
 }

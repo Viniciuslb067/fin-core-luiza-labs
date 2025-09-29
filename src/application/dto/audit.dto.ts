@@ -7,6 +7,7 @@ import {
   IsString,
   Min,
 } from 'class-validator';
+import { OperationType } from '../../domain/enums/OperationType';
 
 export class LedgerQueryDto {
   @IsOptional()
@@ -19,7 +20,7 @@ export class LedgerQueryDto {
 
   @IsOptional()
   @IsString()
-  type?: 'DEPOSIT' | 'WITHDRAW' | 'TRANSFER_OUT' | 'TRANSFER_IN';
+  type?: OperationType;
 
   @IsOptional()
   @Type(() => Number)

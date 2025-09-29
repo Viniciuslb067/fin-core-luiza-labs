@@ -31,8 +31,8 @@ describe('Transactions (e2e)', () => {
         .expect(200)
         .expect((res) => {
           expect(res.body).toHaveProperty('balance');
-          expect(res.body).toHaveProperty('entryId');
           expect(res.body).toHaveProperty('hash');
+          expect(res.body).toHaveProperty('height');
         });
     });
 
@@ -70,8 +70,9 @@ describe('Transactions (e2e)', () => {
         .expect(200)
         .expect((res) => {
           expect(res.body).toHaveProperty('balance');
-          expect(res.body).toHaveProperty('entryId');
           expect(res.body).toHaveProperty('hash');
+          expect(res.body).toHaveProperty('height');
+          expect(res.body).toHaveProperty('type', 'WITHDRAW');
         });
     });
 
@@ -80,7 +81,7 @@ describe('Transactions (e2e)', () => {
         .post('/transactions/withdraw')
         .send({
           accountNumber: 'ACC001',
-          amount: 10000, // Very large amount
+          amount: 10000,
           description: 'Should fail',
         })
         .expect(400);
@@ -103,6 +104,10 @@ describe('Transactions (e2e)', () => {
           expect(res.body).toHaveProperty('inTxId');
           expect(res.body).toHaveProperty('originAfter');
           expect(res.body).toHaveProperty('destAfter');
+          expect(res.body).toHaveProperty('outHash');
+          expect(res.body).toHaveProperty('inHash');
+          expect(res.body).toHaveProperty('outHeight');
+          expect(res.body).toHaveProperty('inHeight');
         });
     });
 
@@ -135,24 +140,16 @@ describe('Transactions (e2e)', () => {
         .post('/transactions/batch')
         .send({
           items: [
-            {
-              type: 'DEPOSIT',
-              accountNumber: 'ACC001',
-              amount: 100,
-              description: 'Batch deposit 1',
-            },
-            {
-              type: 'WITHDRAW',
-              accountNumber: 'ACC002',
-              amount: 50,
-              description: 'Batch withdraw 1',
-            },
+            { type: 'DEPOSIT', accountNumber: 'ACC001', amount: 100, description: 'Batch deposit 1' },
+            { type: 'WITHDRAW', accountNumber: 'ACC002', amount: 50, description: 'Batch withdraw 1' },
           ],
         })
         .expect(200)
         .expect((res) => {
-          expect(res.body).toHaveProperty('processed');
-          expect(res.body).toHaveProperty('failed');
+          expect(res.body).toHaveProperty('ok', true);
+          expect(res.body).toHaveProperty('results');
+          expect(Array.isArray(res.body.results)).toBe(true);
+          expect(res.body).toHaveProperty('count', 2);
         });
     });
 
@@ -160,13 +157,7 @@ describe('Transactions (e2e)', () => {
       return request(app.getHttpServer())
         .post('/transactions/batch')
         .send({
-          items: [
-            {
-              type: 'INVALID_TYPE',
-              accountNumber: 'ACC001',
-              amount: 100,
-            },
-          ],
+          items: [{ type: 'INVALID_TYPE', accountNumber: 'ACC001', amount: 100 }],
         })
         .expect(400);
     });
@@ -198,7 +189,7 @@ describe('Transactions (e2e)', () => {
   });
 
   describe('Idempotency', () => {
-    it('should handle idempotency key header', () => {
+    it('should handle idempotency key header (no-op for now)', () => {
       return request(app.getHttpServer())
         .post('/transactions/deposit')
         .set('idempotency-key', 'test-key-123')

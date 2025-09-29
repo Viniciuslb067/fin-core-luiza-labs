@@ -1,12 +1,9 @@
 import { Height } from '../value-objects/Height';
 import { Money } from '../value-objects/Money';
 import { OccurredAt } from '../value-objects/OccurredAt';
+import { OperationType } from '../enums/OperationType';
 
-export type LedgerType =
-  | 'DEPOSIT'
-  | 'WITHDRAW'
-  | 'TRANSFER_OUT'
-  | 'TRANSFER_IN';
+export type LedgerType = OperationType;
 
 export class LedgerEntry {
   constructor(

@@ -4,11 +4,12 @@ import {
   IsPositive,
   IsString,
   IsOptional,
-  Matches,
+  IsIn,
   ValidateNested,
   ArrayMinSize,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { OperationType } from '../../domain/enums/OperationType';
 
 export class DepositDto {
   @IsString()
@@ -60,8 +61,9 @@ export class TransferDto {
 }
 
 export class BatchDepositItem {
-  @Matches(/^DEPOSIT$/)
-  type!: 'DEPOSIT';
+  @IsIn([OperationType.DEPOSIT])
+  @IsString()
+  type!: typeof OperationType.DEPOSIT;
 
   @IsString()
   @IsNotEmpty()
@@ -78,8 +80,9 @@ export class BatchDepositItem {
 }
 
 export class BatchWithdrawItem {
-  @Matches(/^WITHDRAW$/)
-  type!: 'WITHDRAW';
+  @IsIn([OperationType.WITHDRAW])
+  @IsString()
+  type!: typeof OperationType.WITHDRAW;
 
   @IsString()
   @IsNotEmpty()
@@ -96,8 +99,9 @@ export class BatchWithdrawItem {
 }
 
 export class BatchTransferItem {
-  @Matches(/^TRANSFER$/)
-  type!: 'TRANSFER';
+  @IsIn([OperationType.TRANSFER])
+  @IsString()
+  type!: typeof OperationType.TRANSFER;
 
   @IsString()
   @IsNotEmpty()
@@ -124,7 +128,17 @@ export type BatchItemDto =
 
 export class ProcessBatchDto {
   @ValidateNested({ each: true })
-  @Type(() => Object)
+  @Type(() => Object, {
+    discriminator: {
+      property: 'type',
+      subTypes: [
+        { value: BatchDepositItem, name: OperationType.DEPOSIT },
+        { value: BatchWithdrawItem, name: OperationType.WITHDRAW },
+        { value: BatchTransferItem, name: OperationType.TRANSFER },
+      ],
+    },
+    keepDiscriminatorProperty: true,
+  })
   @ArrayMinSize(1)
   items!: BatchItemDto[];
 }

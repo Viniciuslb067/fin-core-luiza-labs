@@ -8,6 +8,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { AccountOrm } from './Account.orm';
+import { OperationType } from '../../../domain/enums/OperationType';
 
 @Entity('ledger_entries')
 export class LedgerEntryOrm {
@@ -18,10 +19,7 @@ export class LedgerEntryOrm {
   account!: AccountOrm;
 
   @Column({ type: 'varchar', length: 20 }) type!:
-    | 'DEPOSIT'
-    | 'WITHDRAW'
-    | 'TRANSFER_OUT'
-    | 'TRANSFER_IN';
+  | OperationType;
 
   @Column({ type: 'numeric', precision: 18, scale: 2 }) amount!: string;
 

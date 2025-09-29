@@ -1,41 +1,59 @@
-import { Injectable } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { EntityManager } from 'typeorm';
 import { LedgerRepository } from '../../domain/ports/LedgerRepository';
 import { LedgerEntry } from '../../domain/entities/LedgerEntry';
 import { LedgerHeadOrm } from '../db/entities/LedgerHead.orm';
 import { LedgerEntryOrm } from '../db/entities/LedgerEntry.orm';
-import { toDomainHead, toOrmEntry } from '../db/mappers/Ledger.mapper';
+import {
+  toDomainHead,
+  toDomainEntry,
+  toOrmEntry,
+} from '../db/mappers/Ledger.mapper';
 
-@Injectable()
 export class LedgerRepositoryOrm implements LedgerRepository {
-  constructor(private readonly ds: DataSource) {}
+  constructor(private readonly em: EntityManager) {}
+
+  async getHead(accountId: string) {
+    const head = await this.em.getRepository(LedgerHeadOrm).findOne({
+      where: { account_id: accountId },
+    });
+    return head ? toDomainHead(head) : null;
+  }
 
   async getHeadForUpdate(accountId: string) {
-    const m = this.ds.manager;
-    let head = await m
-      .createQueryBuilder(LedgerHeadOrm, 'h')
+    let head = await this.em
+      .getRepository(LedgerHeadOrm)
+      .createQueryBuilder('h')
       .setLock('pessimistic_write')
       .where('h.account_id = :id', { id: accountId })
       .getOne();
 
     if (!head) {
-      head = m
+      head = this.em
         .getRepository(LedgerHeadOrm)
         .create({ account_id: accountId, head_hash: null, height: '0' });
-      await m.getRepository(LedgerHeadOrm).save(head);
+      await this.em.getRepository(LedgerHeadOrm).save(head);
     }
     return toDomainHead(head);
   }
 
   async append(entry: LedgerEntry) {
-    await this.ds.getRepository(LedgerEntryOrm).save(toOrmEntry(entry));
+    await this.em.getRepository(LedgerEntryOrm).save(toOrmEntry(entry));
   }
 
-  async advanceHead(headDomain, newHash: string) {
-    const repo = this.ds.getRepository(LedgerHeadOrm);
-    await repo.update(
-      { account_id: headDomain.accountId },
-      { head_hash: newHash, height: headDomain.height.toString() },
-    );
+  async advanceHead(head, newHash: string, newHeight: string) {
+    await this.em
+      .getRepository(LedgerHeadOrm)
+      .update(
+        { account_id: head.accountId },
+        { head_hash: newHash, height: newHeight },
+      );
+  }
+
+  async listByAccountAsc(accountId: string): Promise<LedgerEntry[]> {
+    const rows = await this.em.getRepository(LedgerEntryOrm).find({
+      where: { account: { id: accountId } as any },
+      order: { height: 'ASC' },
+    });
+    return rows.map(toDomainEntry);
   }
 }

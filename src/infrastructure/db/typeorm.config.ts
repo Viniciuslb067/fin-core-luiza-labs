@@ -17,13 +17,11 @@ export const dataSourceOptions: DataSourceOptions & SeederOptions = {
   database: process.env.DB_NAME ?? 'fincore',
   entities: [AccountOrm, LedgerEntryOrm, LedgerHeadOrm],
   synchronize: false,
-  logging: true,
+  logging: false,
   charset: 'utf8mb4',
   factories: [path.resolve(__dirname, 'factories/**/*{.ts,.js}')],
   seeds: [path.resolve(__dirname, 'seeds/**/*{.ts,.js}')],
   migrations: [path.resolve(__dirname, 'migrations/*.{ts,js}')],
 };
-
-console.log(process.env.DB_HOST);
 
 export default new DataSource(dataSourceOptions);

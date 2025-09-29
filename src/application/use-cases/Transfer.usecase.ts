@@ -1,151 +1,138 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
-import { DataSource, EntityManager } from 'typeorm';
-import { AccountOrm } from '../../infrastructure/db/entities/Account.orm';
-import { LedgerHeadOrm } from '../../infrastructure/db/entities/LedgerHead.orm';
-import { LedgerEntryOrm } from '../../infrastructure/db/entities/LedgerEntry.orm';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import type { UnitOfWork } from '../../domain/ports/UnitOfWork';
+import { AccountNumber } from '../../domain/value-objects/AccountNumber';
+import { Money } from '../../domain/value-objects/Money';
+import { OccurredAt } from '../../domain/value-objects/OccurredAt';
+import { LedgerEntry } from '../../domain/entities/LedgerEntry';
 import { computeLedgerHash } from '../../domain/services/ChainHasher';
+import { OperationType } from '../../domain/enums/OperationType';
+import { randomUUID } from 'node:crypto';
+import type { FeePolicy } from 'src/domain/ports/FeePolicy';
+
+type Params = {
+  from: string;
+  to: string;
+  amount: number;
+  description?: string;
+};
 
 @Injectable()
 export class TransferUseCase {
-  constructor(private readonly ds: DataSource) {}
+  constructor(
+    @Inject('UnitOfWork') private readonly uow: UnitOfWork,
+    @Inject('FeePolicy') private readonly fees: FeePolicy,
+  ) {}
 
-  private calcFee(amount: number) {
-    const fixed = 1.0;
-    const variable = amount * 0.005;
-    return +(fixed + variable).toFixed(2);
+  exec(params: Params) {
+    return this.uow.withTransaction((tx) => this.execIn(tx, params));
   }
 
-  async exec(params: {
-    from: string;
-    to: string;
-    amount: number;
-    description?: string;
-  }) {
-    return this.ds.transaction('SERIALIZABLE', (m) =>
-      this.execWithManager(m, params),
-    );
-  }
-
-  async execWithManager(
-    m: EntityManager,
-    params: { from: string; to: string; amount: number; description?: string },
-  ) {
-    const { from, to, amount, description } = params;
+  async execIn(tx: UnitOfWork, { from, to, amount, description }: Params) {
     if (from === to) throw new BadRequestException('from and to must differ');
     if (amount <= 0) throw new BadRequestException('amount must be > 0');
 
-    const accounts = await m.getRepository(AccountOrm).find({
-      where: [{ number: from }, { number: to }],
-    });
-    const origin = accounts.find((a) => a.number === from);
-    const dest = accounts.find((a) => a.number === to);
+    const fromNum = AccountNumber.create(from);
+    const toNum = AccountNumber.create(to);
+
+    const origin = await tx.accounts.findByNumber(fromNum);
+    const dest = await tx.accounts.findByNumber(toNum);
     if (!origin || !dest) throw new BadRequestException('account(s) not found');
 
-    const ordered = [origin, dest].sort((a, b) => (a.id < b.id ? -1 : 1));
-    const heads: Record<string, LedgerHeadOrm> = {};
+    const amt = Money.fromDecimal(amount);
+    const fee = this.fees.calculate(amt, OperationType.TRANSFER_OUT);
 
-    for (const acc of ordered) {
-      let h = await m
-        .createQueryBuilder(LedgerHeadOrm, 'h')
-        .setLock('pessimistic_write')
-        .where('h.account_id = :id', { id: acc.id })
-        .getOne();
-
-      if (!h) {
-        h = m
-          .getRepository(LedgerHeadOrm)
-          .create({ account_id: acc.id, head_hash: null, height: '0' });
-        await m.getRepository(LedgerHeadOrm).save(h);
-      }
-      heads[acc.id] = h;
-    }
-
-    const oHead = heads[origin.id];
-    const dHead = heads[dest.id];
-
-    const fee = this.calcFee(amount);
-    const total = amount + fee;
-    const available = +origin.balance + +origin.credit_limit;
-    if (available < total)
+    if (!origin.canDebit(amt, fee)) {
       throw new BadRequestException(
         'insufficient funds considering credit limit',
       );
+    }
 
-    origin.balance = (+origin.balance - total).toFixed(2);
-    dest.balance = (+dest.balance + amount).toFixed(2);
-    await m.getRepository(AccountOrm).save([origin, dest]);
+    const [first, second] =
+      origin.id < dest.id ? [origin, dest] : [dest, origin];
+    const firstHead = await tx.ledger.getHeadForUpdate(first.id);
+    const secondHead = await tx.ledger.getHeadForUpdate(second.id);
 
-    const nowIso = new Date().toISOString();
-    const amountStr = amount.toFixed(2);
-    const feeStr = fee.toFixed(2);
+    const oHead = first.id === origin.id ? firstHead : secondHead;
+    const dHead = first.id === origin.id ? secondHead : firstHead;
 
-    const outHeight = (BigInt(oHead.height) + 1n).toString();
-    const outPrev = oHead.head_hash;
+    origin.applyDebit(amt, fee);
+    dest.applyCredit(amt);
+    await tx.accounts.save(origin);
+    await tx.accounts.save(dest);
+
+    const occurredAt = OccurredAt.now();
+    const amountStr = amt.toDecimal();
+    const feeStr = fee.toDecimal();
+
+    const outId = randomUUID();
+    const inId = randomUUID();
+
+    const outHeight = oHead.height.inc();
+    const inHeight = dHead.height.inc();
 
     const outHash = computeLedgerHash({
-      accountNumber: origin.number,
-      type: 'TRANSFER_OUT',
+      accountNumber: fromNum.value,
+      type: OperationType.TRANSFER_OUT,
       amount: amountStr,
       fee: feeStr,
-      occurredAtIso: nowIso,
-      prevHash: outPrev,
+      occurredAtIso: occurredAt.date.toISOString(),
+      prevHash: oHead.headHash,
       description: description ?? null,
     });
-
-    const outEntry = m.getRepository(LedgerEntryOrm).create({
-      account: origin,
-      type: 'TRANSFER_OUT',
-      amount: amountStr,
-      fee: feeStr,
-      description,
-      occurred_at: new Date(nowIso),
-      prev_hash: outPrev,
-      hash: outHash,
-      height: outHeight,
-    });
-    await m.getRepository(LedgerEntryOrm).save(outEntry);
-
-    const inHeight = (BigInt(dHead.height) + 1n).toString();
-    const inPrev = dHead.head_hash;
 
     const inHash = computeLedgerHash({
-      accountNumber: dest.number,
-      type: 'TRANSFER_IN',
+      accountNumber: toNum.value,
+      type: OperationType.TRANSFER_IN,
       amount: amountStr,
       fee: '0.00',
-      occurredAtIso: nowIso,
-      prevHash: inPrev,
+      occurredAtIso: occurredAt.date.toISOString(),
+      prevHash: dHead.headHash,
       description: description ?? null,
     });
 
-    const inEntry = m.getRepository(LedgerEntryOrm).create({
-      account: dest,
-      type: 'TRANSFER_IN',
-      amount: amountStr,
-      fee: '0.00',
-      description,
-      occurred_at: new Date(nowIso),
-      prev_hash: inPrev,
-      hash: inHash,
-      height: inHeight,
-      related_tx_id: outEntry.id,
-    });
-    await m.getRepository(LedgerEntryOrm).save(inEntry);
+    const outEntry = new LedgerEntry(
+      outId,
+      origin.id,
+      OperationType.TRANSFER_OUT,
+      amt,
+      fee,
+      occurredAt,
+      description ?? null,
+      oHead.headHash,
+      outHash,
+      outHeight,
+      inId,
+    );
 
-    outEntry.related_tx_id = inEntry.id;
-    await m.getRepository(LedgerEntryOrm).save(outEntry);
+    const inEntry = new LedgerEntry(
+      inId,
+      dest.id,
+      OperationType.TRANSFER_IN,
+      amt,
+      Money.fromDecimal(0),
+      occurredAt,
+      description ?? null,
+      dHead.headHash,
+      inHash,
+      inHeight,
+      outId,
+    );
 
-    oHead.head_hash = outHash;
-    oHead.height = outHeight;
-    dHead.head_hash = inHash;
-    dHead.height = inHeight;
-    await m.getRepository(LedgerHeadOrm).save([oHead, dHead]);
+    await tx.ledger.append(outEntry);
+    await tx.ledger.append(inEntry);
+
+    await tx.ledger.advanceHead(oHead, outHash, outHeight.toString());
+    await tx.ledger.advanceHead(dHead, inHash, inHeight.toString());
 
     return {
-      outTxId: outEntry.id,
-      inTxId: inEntry.id,
-      originAfter: origin.balance,
-      destAfter: dest.balance,
+      outTxId: outId,
+      inTxId: inId,
+      originAfter: origin.getBalance().toDecimal(),
+      destAfter: dest.getBalance().toDecimal(),
+      outHash,
+      inHash,
+      outHeight: outHeight.toString(),
+      inHeight: inHeight.toString(),
     };
   }
 }
