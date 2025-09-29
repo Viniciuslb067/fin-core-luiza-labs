@@ -16,26 +16,27 @@ Este é um **desafio técnico** que implementa um sistema financeiro completo co
 - ✅ **Ledger Blockchain** para garantir integridade das transações
 - ✅ **Transações Atômicas** com controle de concorrência
 - ✅ **API RESTful** completa com validações
-- ✅ **Testes Abrangentes** (Unit, Integration, E2E)
+- ✅ **Testes**
 - ✅ **Auditoria Completa** com verificação de cadeia
 
 ## 🏗️ Arquitetura
 
 ```
 src/
-├── domain/           # Regras de negócio puras
-│   ├── entities/     # Entidades de domínio
-│   ├── repositories/ # Interfaces de repositório
-│   └── services/     # Serviços de domínio (ChainHasher)
-├── application/      # Casos de uso
-│   ├── use-cases/    # Lógica de aplicação
-│   └── dto/          # Data Transfer Objects
+├── domain/           # Regras de negócio puras (sem Nest/ORM)
+│   ├── entities/     # Entidades (Account, LedgerEntry, LedgerHead)
+│   ├── enums/        # Tipos/constantes de domínio (OperationType)
+│   ├── ports/        # Interfaces (UnitOfWork, Repositórios, FeePolicy)
+│   ├── services/     # Serviços de domínio (ChainHasher, FeePolicies)
+│   └── value-objects/# Objetos de valor (Money, Height, Hash, etc.)
+├── application/      # Casos de uso (orquestram regras + políticas)
+│   ├── use-cases/    # Deposit, Withdraw, Transfer, ProcessBatch, VerifyChain, GetBalance
+│   └── dto/          # DTOs de entrada/validação (class-validator)
 ├── infrastructure/   # Implementações técnicas
-│   ├── db/          # TypeORM, entidades, migrations
-│   └── repositories/ # Implementações de repositório
-└── interfaces/      # Camada de apresentação
-    ├── http/        # Controllers REST
-    └── presenters/  # Formatadores de resposta
+│   ├── db/           # TypeORM (entities .orm, mappers, migrations, seeds, config)
+│   └── repositories/ # Repositórios e UnitOfWork baseados em TypeORM
+└── interfaces/       # Camada de apresentação (I/O)
+    └── http/         # Controllers REST + módulos HTTP
 ```
 
 ## 🚀 Instalação e Configuração
@@ -55,10 +56,7 @@ npm install
 ### 2. Configure o Banco de Dados com Docker Compose
 ```bash
 # Subir o MySQL
-docker-compose up -d mysql
-
-# Aguardar o banco ficar pronto (healthcheck)
-docker-compose ps
+docker-compose up -d
 ```
 
 ### 3. Configure as Variáveis de Ambiente
@@ -88,13 +86,6 @@ npm run seed:run
 ```bash
 # Desenvolvimento
 npm run start:dev
-
-# Produção
-npm run build
-npm run start:prod
-
-# Debug
-npm run start:debug
 ```
 
 **Importante:** Certifique-se de que o MySQL está rodando via Docker Compose:
@@ -103,7 +94,7 @@ npm run start:debug
 docker-compose ps
 
 # Se não estiver, subir o banco
-docker-compose up -d mysql
+docker-compose up -d
 ```
 
 A aplicação estará disponível em `http://localhost:3000`
@@ -114,29 +105,13 @@ A aplicação estará disponível em `http://localhost:3000`
 ```
 test/
 ├── unit/              # Testes unitários (mocks)
-├── integration/       # Testes de integração (banco real)
-├── setup/            # Configurações globais
 └── *.e2e-spec.ts     # Testes end-to-end
 ```
 
 ### Comandos de Teste
 ```bash
 # Testes unitários
-npm run test:unit
-npm run test:unit:watch
-npm run test:unit:cov
-
-# Testes de integração
-npm run test:integration
-npm run test:integration:watch
-npm run test:integration:cov
-
-# Testes E2E
-npm run test:e2e
-
-# Todos os testes
-npm run test:all
-npm run test:all:cov
+npm run test
 ```
 
 ## 📚 Documentação da API
@@ -149,7 +124,6 @@ http://localhost:3000
 ### Headers Opcionais
 ```
 Content-Type: application/json
-idempotency-key: <string> # Para garantir idempotência
 ```
 
 ---
@@ -475,97 +449,6 @@ curl -X POST http://localhost:3000/transactions/batch \
 
 ---
 
-## 🛠️ Desenvolvimento
-
-### Scripts Disponíveis
-```bash
-# Desenvolvimento
-npm run start:dev          # Modo desenvolvimento com watch
-npm run start:debug        # Modo debug
-
-# Build e Produção
-npm run build              # Compilar TypeScript
-npm run start:prod         # Executar versão compilada
-
-# Testes
-npm run test:unit          # Testes unitários
-npm run test:integration   # Testes de integração
-npm run test:e2e           # Testes end-to-end
-npm run test:all           # Todos os testes
-
-# Qualidade de Código
-npm run lint               # ESLint
-npm run format             # Prettier
-
-# Banco de Dados
-npm run migration:create   # Criar nova migration
-npm run migration:run      # Executar migrations
-npm run migration:revert   # Reverter última migration
-npm run seed:run           # Executar seeds
-```
-
----
-
-## 📈 Monitoramento e Logs
-
-### Logs da Aplicação
-- Todas as transações são logadas
-- Erros com stack trace completo
-- Métricas de performance
-- Auditoria de acesso
-
-### Health Check
-```bash
-GET /health
-```
-
-### Métricas
-- Número de transações por minuto
-- Tempo médio de resposta
-- Taxa de erro
-- Uso de recursos
-
----
-
-## 🚀 Deploy
-
-### Docker Compose
-A aplicação utiliza Docker Compose para gerenciar o banco de dados MySQL. A aplicação Node.js roda localmente.
-
-```bash
-# Subir apenas o banco de dados
-docker-compose up -d mysql
-
-# Verificar status
-docker-compose ps
-
-# Parar serviços
-docker-compose down
-
-# Parar e remover volumes (CUIDADO: apaga dados)
-docker-compose down -v
-```
-
-### Configuração do Docker Compose
-O arquivo `docker-compose.yml` configura:
-- **MySQL 8.0** com healthcheck
-- **Volume persistente** para dados
-- **Variáveis de ambiente** configuráveis
-- **Porta 3306** exposta
-
-### Variáveis de Ambiente
-```bash
-# .env
-DB_ROOT_PASS=root
-DB_NAME=fincore
-DB_USER=app
-DB_PASS=app
-DB_PORT=3306
-DB_HOST=localhost
-PORT=3000
-```
----
-
 <p align="center">
-  Desenvolvido com ❤️ usando NestJS e Clean Architecture
+  Desenvolvido por Vinicius Lima Barbosa
 </p>
